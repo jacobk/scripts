@@ -3,9 +3,9 @@
 FORCE=false
 
 while getopts f o; do
-	case $o in
-		f) FORCE=true;;
-	esac
+  case $o in
+    f) FORCE=true;;
+  esac
 done
 
 echo "Analyzing your system..."
