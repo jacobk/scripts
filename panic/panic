@@ -1,24 +1,79 @@
 #!/usr/bin/env bash
 
 FORCE=false
+THRESHOLD=0
+COMMAND=".*"
 
-while getopts f o; do
+print_usage_and_exit() {
+	cat <<-END
+Usage: `basename $0` [-f] [-t threshold] [-c command_pattern]
+
+Find the process consuming the most CPU and humbly asks for permission to KILL
+IT (kill -9).
+
+-f  The process will be killed unconditionally.
+
+-t  Works like -f but will only kill the process if it consumes more CPU than 
+    the supplied value. This option can be combined with -c.
+
+-c  Works like -f but will only kill the process if its "command" matches
+    the command_pattern (an "extended regular expression"). This option can be 
+    combined with -t.
+END
+	exit
+}
+
+shopt -s nocasematch
+
+while getopts hft:c: o; do
   case $o in
+    h) print_usage_and_exit;;
     f) FORCE=true;;
+    t)
+      FORCE=true
+      THRESHOLD=$OPTARG
+      if ! [[ "$THRESHOLD" =~ ^[0-9]+$ ]] ; then
+        print_usage_and_exit
+      fi
+      ;;
+    c)
+      FORCE=true
+      COMMAND=$OPTARG
+      ;;
   esac
 done
 
 echo "Analyzing your system..."
 
 user=`whoami`
-topproc=`top -user $user -o cpu -stats pid,command,cpu -n 1 -l 3 | tail -n 1`
+topproc=`top -user $user -o cpu -stats pid,cpu,command -n 1 -l 3 | tail -n 1`
 set -- $topproc
+pid=$1
 
-echo "$2 is consuming $3% CPU"
+if [[ $pid =~ ^([0-9]+)[^0-9]+ ]]; then
+  # remove trailing architecture stuff form pid (-,*, etc.)
+  pid=${BASH_REMATCH[1]}
+fi
+cpu=$2
+cmd=$3
 
+echo "$cmd is consuming $cpu% CPU"
+
+# don't promt when in force-mode
 $FORCE || read -p "Kill it? [N]: " -r
 
 if $FORCE || [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo "Killing pid $1"
-    `kill -9 $1`
+  # using ps to ge a better command name, top's is truncated.
+  psinfo=`ps -axco pid,command | grep $pid`
+  if ! [[ $psinfo =~ $COMMAND ]]; then
+    echo "Command didn't match $psinfo"
+    exit
+  fi
+  if ! [[ ${cpu/.*} -gt $THRESHOLD ]]; then
+    echo "Threshold not met $cpu"
+    exit
+  fi
+
+  echo "Killing pid $pid"
+  `kill -9 $pid`
 fi
