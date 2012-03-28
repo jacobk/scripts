@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+for key in `redis-cli keys "*$1*" | cut -d " " -f2`
+do
+  echo "$key : $(redis-cli get $key)"
+done
